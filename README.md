@@ -2,7 +2,7 @@ See https://www.youtube.com/watch?v=SGPwBNoDQaA&ab_channel=ManikaLamba before
 # Specifying an R environment with a runtime.txt file
 
 
-RStudio: [![Binder](http://mybinder.org/badge_logo.svg)](http://mybinder.org/v2/gh/nsaby/SamplingCourseTours/RunSamplingCourse/master?urlpath=rstudio)
+RStudio: [![Binder](http://mybinder.org/badge_logo.svg)](http://mybinder.org/v2/gh/nsaby/SamplingCourseTours/master?urlpath=rstudio)
 
 
 Binder supports using R and RStudio, with libraries pinned to a specific 
