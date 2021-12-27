@@ -3,7 +3,7 @@ library(raster)
 library(tmap)
 library(dplyr)
 library(fields)
-
+library(sampling)
 
 # Preparer les donn?es 
 parc <- read_sf("../data/parcelle_adj.shp")
@@ -21,7 +21,7 @@ scrop <- crop(s,parc)
 scrop <- mask(scrop,parc)
 
 rcrop <- crop(r,parc)
-rcrop <- crop(rcrop,parc)
+rcrop <- mask(rcrop,parc)
 plot(scrop)
 
 # Choix du nombre d'échantillons
@@ -101,7 +101,6 @@ nh[nh<2] <- 2
 nh
 sum(nh)
 
-library(fields)
 units<-strata(maGrille,
               stratanames="stratKM2",
               size=nh,

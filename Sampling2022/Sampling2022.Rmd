@@ -1,0 +1,373 @@
+---
+title: "Echantillonnage parcelle 2020"
+output: 
+  learnr::tutorial:
+    progressive: true
+    allow_skip: true
+runtime: shiny_prerendered
+description: >
+ Tester plusieurs configuration d'échantillonnage.
+---
+
+```{r }
+library(sf)
+library(raster)
+library(tmap)
+library(dplyr)
+library(fields)
+library(sampling)
+
+tutorial_options(exercise.timelimit = 60)
+knitr::opts_chunk$set(error = TRUE)
+```
+
+
+## Bienvenue
+
+Dans cet exercice, nous allons mettre en oeuvre les techniques de sélection des unités d'échantillonnage dans l'espace afin de produire à la fois une carte des propriétés du sol et une estimation des statistiques globales de la parcelle.
+
+Nous basons ce TD sur les données acquises par l'université de Tours sur une parcelle agricole. L'objectif est de caractériser les propriétés du sol globalement et localement.
+
+Nous allons aborder
+
+* Charger les données SIG 
+* Calculer les variables dérivées issue d'un mnt avec le package `raster``
+* Combiner ces informations dans un objet
+* utiliser les fonctions de création d'échantillonnage spatiale avec `sf`
+* utiliser le package `fields` avec la fonction `stratify`
+* Créer des cluster de pixels avec `kmeans`
+
+Il est en lien avec les cours [_Cours Echantillonnage_](https://nsaby.github.io/cours-echantillonnage/), un libre cookbook.
+
+### Démarrage
+
+La définition de protocole d'échantillonnage dans l'espace nécessite d'utiliser les fonctions SIG dans R. 
+
+Ce tutoriel se concentre sur les package `raster` et `sf`.
+
+Pour faire les figures, j'aime bien le package `tmap` qui permet de faire des cartes très avancées.
+
+J'ai préchargé les librairies et préparer les données.
+
+
+```{r eval = TRUE}
+library(learnr)
+library(sf)
+library(raster)
+library(tmap)
+library(dplyr)
+library(fields)
+library(sampling)
+```
+
+## Préparer les données
+
+### Charger des rasters et des vecteurs
+
+`sf::st_read()` permet de lire un fichier shape alors que la fonction `raster::raster` est dédie au fichier raster. Pour charger en mémoire la grille, nous utilisons la fonction `raster::readAll()``
+
+La grille qui représente l'altitude est au format Arc/Info. Il faut donc indiquer le répertoire :
+* Lire les données
+* Extraire la partie correspondant à la parcelle (crop puis mask)
+* sauver les données pour la suite dans le repertoire data au format rds.
+
+```{r }
+parc <- read_sf("www/parcelle_adj.shp")
+
+r <- raster("www/mnt_par_adj/" , values = TRUE)
+
+rcrop <- crop(r,parc)
+rcrop <- mask(rcrop,parc)
+
+dir.create("data",  showWarnings = FALSE)
+
+saveRDS(parc, file = 'data/parc.RDS')
+saveRDS(rcrop, file = 'data/r.RDS')
+
+```
+
+
+### Représenter
+
+
+On peut ensuite aisément visualiser les données avec le package `tmap`. On ajoute les couches avec les fonctions adaptées au format de données
+
+```{r}
+tm_shape(r) +  tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0)
+
+```
+
+### Préparer les données pour les exercices
+
+
+Le setup permet de partager les données dans les différents exercices.
+Calculer les variables dérivées, 
+
+```{r setup, include=FALSE}
+
+rcrop <- readRDS('data/r.RDS')
+parc <- readRDS('data/parc.RDS')
+
+s <- terrain( rcrop,
+              opt = c("slope", "aspect", "TPI", "TRI") 
+              )
+
+maGrille <- cbind.data.frame(coordinates(rcrop),
+                             alt = getValues(rcrop),
+                             getValues(s)
+                             )
+
+maGrille  <- na.omit(maGrille)
+
+```
+
+
+
+## Echantillonnage spatial
+
+### aléatoire simple
+
+Dans un premier temps, écrire un code pour produire un échantillonnage aléatoire simple appelé SI. Pour cela:
+
+ * utiliser la fonction `st_sample`  avec les bonnes options
+ * choisir le bon nombre d'unités d'échantillonnage
+ * faire une carte avec `tmap`
+
+```{r si, exercise = TRUE}
+set.seed()
+
+nEchantillons <- 
+  
+# échantillonnage aléatoire simple
+
+MonSpSI  <- st_sample( , 
+                      size= , 
+                      type =  )
+
+tm_shape() + tm_polygons() +
+  tm_shape() + tm_dots(size=)
+```
+
+```{r si-solution}
+set.seed(12)
+
+
+nEchantillons <- 24
+  
+# échantillonnage aléatoire simple
+
+MonSpSI  <- st_sample(parc ,
+                      size= nEchantillons, 
+                      type =  'random'
+                      )
+
+# Faire la carte
+tm_shape(parc) + tm_polygons() +
+  tm_shape(MonSpSI) + tm_dots(size=2)
+
+```
+    
+
+
+## Grille systématique
+
+Créer un échantillonnage régulier avec 24 points
+
+ * utiliser la fonction `st_sample`  avec la bonne option
+ * choisir le bon nombre d'unités d'échantillonnage
+ * faire une carte avec `tmap`
+
+
+```{r sy, exercise = TRUE}
+
+nEchantillons <- 24
+  
+# échantillonnage grille
+MonSpSY  <- st_sample( , 
+                      size= , 
+                      type =  )
+
+
+tm_shape(parc) + tm_polygons() +
+  tm_shape() + tm_dots(size=)
+
+    
+```
+
+
+
+```{r sy-solution}
+nEchantillons <- 24
+  
+# échantillonnage grille
+MonSpSY  <- st_sample(parc , 
+                      size= nEchantillons, 
+                      type =  'regular')
+
+
+tm_shape(parc) + tm_polygons() +
+  tm_shape(MonSpSY) + tm_dots(size=2)
+
+```
+    
+
+
+## Avec un k moyenne avec les variables dérivées
+
+### Exercise 1
+
+
+Nous pouvons commencer par calculer la pente à partir du mnt
+
+```{r mesdonnes, exercise = TRUE, exercise.setup = "preparer-data"}
+s <- terrain( rcrop ,
+              opt = c("slope") 
+              )
+plot(s)
+```
+
+
+```{r mesdonnes-check}
+"Good job!"
+```
+
+
+
+### Exercise 2
+
+Allonger la liste des variables dérivées calculées dans l'objet s afin de rajouter l'aspect, le TPI et le TRI:  `c( "slope","aspect", "TPI", "TRI")`
+
+**astuce:** remplacer l'option opt en `c( "slope","aspect", "TPI", "TRI")`. 
+
+    
+```{r summariseex4, exercise = TRUE, exercise.setup = "preparer-data"}
+    
+```
+
+```{r summariseex4-solution}
+s <- terrain( r,
+              opt = c("slope", "aspect", "TPI", "TRI") 
+              )
+
+```
+    
+
+### Exercice 1: calculer les strates
+
+```{r spacov, exercise = TRUE}
+nStrates <- 8
+
+k1<- kmeans(x=  ,
+            centers= ,
+            nstart=10,
+            iter.max = 500)
+
+strat0<- k1$cluster
+maGrille$stratKM <- factor(strat0)
+
+
+StrateSTSI <- rasterFromXYZ(maGrille[,c("x","y","stratKM2")],
+                            crs = crs(parc))
+
+tm_shape(StrateSTSI) + tm_raster() 
+
+
+```
+
+```{r spacov-solution}
+nStrates <- 8
+
+k1<- kmeans(x= maGrille[,1:2] ,
+            centers= nEchantillons,
+            nstart=10, iter.max = 500)
+
+strat0<- k1$cluster
+maGrille$stratKM <- factor(strat0)
+
+
+StrateSTSI <- rasterFromXYZ(maGrille[,c("x","y","stratKM2")],
+                            crs = crs(parc))
+
+tm_shape(StrateSTSI) + tm_raster() 
+
+```
+    
+
+```{r spacov2, exercise = TRUE}
+    
+```
+
+```{r spacov2-solution}
+
+k1<- kmeans(x= maGrille[,1:2] ,
+            centers= nEchantillons,
+            nstart=10, iter.max = 500)
+
+strat0<- k1$cluster
+maGrille$stratKM <- factor(strat0)
+
+rdist.out <- rdist(x1 = k1$centers,
+                   x2 = maGrille[,1:2]
+                   )
+
+ids.mindist <- apply(rdist.out,MARGIN=1,which.min)
+
+mySampleKM <- maGrille[ids.mindist,]
+
+mySampleKM <- st_as_sf(mySampleKM,
+                        coords = c('x','y'),
+                       crs = crs(parc),
+                       agr = "constant")
+
+tm_shape(r) + tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(MonSpSY) + tm_dots(size=4) +
+  tm_shape(MonSpSI) + tm_dots(size=2, col="red")+
+   tm_shape(mySampleKM) + tm_dots(size=2, col="green")
+
+```
+
+
+
+```{r letter-a, echo=FALSE}
+question("Quelle est l'utilité de l'échantillonnage aléatoire",
+  answer("Faire une carte"),
+  answer("Caluler la moyenne de la parcelle", correct = TRUE),
+  answer("faire un cartogramme"),
+  answer("observer la valeurs ")
+)
+```
+
+
+## Echantillonnage avec covariables
+
+
+Créer un échantillonnage régulier avec 24 points
+
+```{r kmean, exercise = TRUE}
+    
+```
+
+```{r kmean-solution}
+nEchantillons <- 24
+  
+# échantillonnage grille
+MonSpSY  <- st_sample(parc , 
+                      size= nEchantillons, 
+                      type =  'regular')
+
+
+tm_shape(parc) + tm_polygons() +
+  tm_shape(MonSpSY) + tm_dots(size=2)
+
+```
+    
+<div id="kmean-hint">
+**Hint:** La stratégie consiste à:
+
+ * utiliser la fonction `st_sample`  avec la bonne option
+ * choisir le bon nombre d'unités d'échantillonnage
+ * faire une carte avec `tmap`
+</div>
+
