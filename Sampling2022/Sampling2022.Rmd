@@ -9,7 +9,9 @@ description: >
  Tester plusieurs configuration d'échantillonnage.
 ---
 
-```{r }
+```{r , include=FALSE}
+library(rmarkdown)
+library(learnr)
 library(sf)
 library(raster)
 library(tmap)
@@ -52,6 +54,7 @@ J'ai préchargé les librairies et préparer les données.
 
 ```{r eval = TRUE}
 library(learnr)
+library(rgdal)
 library(sf)
 library(raster)
 library(tmap)
@@ -74,7 +77,7 @@ La grille qui représente l'altitude est au format Arc/Info. Il faut donc indiqu
 ```{r }
 parc <- read_sf("www/parcelle_adj.shp")
 
-r <- raster("www/mnt_par_adj/" , values = TRUE)
+r <- raster("www/mnt.tif" , values = TRUE)
 
 rcrop <- crop(r,parc)
 rcrop <- mask(rcrop,parc)
@@ -123,6 +126,19 @@ maGrille  <- na.omit(maGrille)
 ```
 
 
+Retenez bien les noms des objets créés :
+
+l'objet `magrille` contenant les coordonnées et les variables dérivées
+
+```{r}
+summary(maGrille)
+```
+
+l'objet `parc` contenant les coordonnées et les variables dérivées
+
+```{r}
+summary(parc)
+```
 
 ## Echantillonnage spatial
 
@@ -170,7 +186,7 @@ tm_shape(parc) + tm_polygons() +
     
 
 
-## Grille systématique
+### Grille systématique
 
 Créer un échantillonnage régulier avec 24 points
 
@@ -212,10 +228,82 @@ tm_shape(parc) + tm_polygons() +
 ```
     
 
+### Spatialement optimisé
 
-## Avec un k moyenne avec les variables dérivées
+Créer un échantillonnage par strate compacte
 
-### Exercise 1
+ * utiliser la fonction `kmeans`  sur les coordonnées avec autant de strates que de sites
+ * choisir le bon nombre d'unités d'échantillonnage
+ * faire une carte avec `tmap`
+
+
+```{r spacov, exercise = TRUE}
+k1<- kmeans(x=  ,
+            centers= ,
+            nstart=10, iter.max = 500)
+
+maGrille$stratKM <- factor(k1$cluster)
+
+rdist.out <- rdist(x1 = k1$centers,
+                   x2 = maGrille[,1:2]
+                   )
+ids.mindist <- apply(rdist.out,MARGIN=1,which.min)
+
+mySampleKM <- maGrille[ids.mindist,]
+
+rm(k1)
+
+mySampleKM <- st_as_sf(mySampleKM,
+                        coords = c('x','y'),
+                       crs = crs(parc),
+                       agr = "constant")
+
+tm_shape(r) + tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(MonSpSY) + tm_dots(size=4) +
+  tm_shape(MonSpSI) + tm_dots(size=2, col="red")+
+   tm_shape(mySampleKM) + tm_dots(size=2, col="green")
+
+
+    
+```
+
+
+
+```{r spacov-solution}
+k1<- kmeans(x= maGrille[,1:2] ,
+            centers= nEchantillons,
+            nstart=10, iter.max = 500)
+
+strat0<- k1$cluster
+maGrille$stratKM <- factor(strat0)
+
+rdist.out <- rdist(x1 = k1$centers,
+                   x2 = maGrille[,1:2]
+                   )
+ids.mindist <- apply(rdist.out,MARGIN=1,which.min)
+
+mySampleKM <- maGrille[ids.mindist,]
+
+rm(k1)
+
+mySampleKM <- st_as_sf(mySampleKM,
+                        coords = c('x','y'),
+                       crs = crs(parc),
+                       agr = "constant")
+
+tm_shape(r) + tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(MonSpSY) + tm_dots(size=4) +
+  tm_shape(MonSpSI) + tm_dots(size=2, col="red")+
+   tm_shape(mySampleKM) + tm_dots(size=2, col="green")
+
+```
+
+
+## Avec un "k-moyenne" avec les variables dérivées
+
+#### Exercise 1
 
 
 Nous pouvons commencer par calculer la pente à partir du mnt
@@ -228,13 +316,8 @@ plot(s)
 ```
 
 
-```{r mesdonnes-check}
-"Good job!"
-```
 
-
-
-### Exercise 2
+#### Exercise 2
 
 Allonger la liste des variables dérivées calculées dans l'objet s afin de rajouter l'aspect, le TPI et le TRI:  `c( "slope","aspect", "TPI", "TRI")`
 
@@ -255,7 +338,7 @@ s <- terrain( r,
 
 ### Exercice 1: calculer les strates
 
-```{r spacov, exercise = TRUE}
+```{r spacov3, exercise = TRUE}
 nStrates <- 8
 
 k1<- kmeans(x=  ,
@@ -275,7 +358,7 @@ tm_shape(StrateSTSI) + tm_raster()
 
 ```
 
-```{r spacov-solution}
+```{r spacov3-solution}
 nStrates <- 8
 
 k1<- kmeans(x= maGrille[,1:2] ,
@@ -295,7 +378,31 @@ tm_shape(StrateSTSI) + tm_raster()
     
 
 ```{r spacov2, exercise = TRUE}
+  k1<- kmeans(
     
+  )
+
+maGrille$stratKM <- factor(k1$cluster)
+
+rdist.out <- rdist(x1 = k1$centers,
+                   x2 = maGrille[,1:2]
+                   )
+
+ids.mindist <- apply(rdist.out,MARGIN=1,which.min)
+
+mySampleKM <- maGrille[ids.mindist,]
+
+mySampleKM <- st_as_sf(mySampleKM,
+                        coords = c('x','y'),
+                       crs = crs(parc),
+                       agr = "constant")
+
+tm_shape(r) + tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(MonSpSY) + tm_dots(size=4) +
+  tm_shape(MonSpSI) + tm_dots(size=2, col="red")+
+   tm_shape(mySampleKM) + tm_dots(size=2, col="green")
+  
 ```
 
 ```{r spacov2-solution}
