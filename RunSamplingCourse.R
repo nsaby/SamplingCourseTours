@@ -1,5 +1,6 @@
 library(sf)
 library(raster)
+library(spatialEco)
 library(tmap)
 library(dplyr)
 library(fields)
@@ -10,24 +11,49 @@ parc <- read_sf("../data/parcelle_adj.shp")
 
 r <- raster("../data/mnt_par_adj/")
 plot(r)
-s <- terrain(r,opt = c("slope", "aspect", "TPI", "TRI") )
+
+
+ragg <- aggregate(r, fact = 8)
+plot(ragg)
+
+
+curv <-curvature(ragg,"planform")
+plot(curv)
+contour(ragg,add=TRUE)
+
+s <- terrain(ragg,
+             opt = c("slope", "TPI", "TRI","roughness") 
+             )
 plot(s)
 
-tm_shape(r) +
+tm_shape(ragg) +
   tm_raster()+
+  tm_shape(parc) + tm_polygons(alpha = 0)
+
+
+tm_shape(s) +
+  tm_raster("tri")+
   tm_shape(parc) + tm_polygons(alpha = 0)
 
 scrop <- crop(s,parc)
 scrop <- mask(scrop,parc)
 
-rcrop <- crop(r,parc)
+rcrop <- crop(ragg,parc)
 rcrop <- mask(rcrop,parc)
 plot(scrop)
+
+curvcrop <- crop(curv,parc)
+curvcrop <- mask(curvcrop,parc)
+
+
+scrop <- stack(scrop, curvcrop)
+plot(scrop)
+
 
 # Choix du nombre d'échantillons
 
 nStrates <- 8
-nEchantillons <- 24
+nEchantillons <- 48
   
 # échantillonnage aléatoire simple
 
@@ -43,7 +69,9 @@ MonSpSY  <- st_sample(parc , size= nEchantillons, type =  'regular')
 
 
 
-maGrille <- cbind.data.frame(coordinates(rcrop),alt = getValues(rcrop),getValues(scrop))
+maGrille <- cbind.data.frame(coordinates(rcrop),
+                             alt = getValues(rcrop),
+                             getValues(scrop))
 maGrille  <- na.omit(maGrille)
 
 
@@ -77,17 +105,46 @@ tm_shape(r) + tm_raster() +
    tm_shape(mySampleKM) + tm_dots(size=2, col="green")
 
 
+tm_shape(r) + tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(MonSpSY) + tm_dots(size=4) 
+
+
+StrateKM <- rasterFromXYZ(maGrille[,c("x","y","stratKM")],
+                            crs = crs(parc))
+
+tm_shape(StrateKM) + tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(mySampleKM) + tm_dots(size=4) 
+
+
+tm_shape(r) + tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(MonSpSY) + tm_dots(size=4) +
+  tm_shape(MonSpSI) + tm_dots(size=2, col="red")+
+  tm_shape(mySampleKM) + tm_dots(size=2, col="green")
+
 ## strate avec RK ----
-k1<- kmeans(x= scale(maGrille[,1:7]) ,
+nStrates <- 5
+nEchantillons <- 32
+
+k1<- kmeans(x= scale(maGrille[,c(3,7,8)]) ,
             centers= nStrates,
             nstart=10, 
             iter.max = 500000)
 
-strat0<- k1$cluster
+maGrille$stratKM2 <- k1$cluster
 
-maGrille$stratKM2 <- factor(strat0)
+StrateSTSI <- rasterFromXYZ(maGrille[,c("x","y","stratKM2")],
+                            crs = crs(parc))
 
+pal8 <- c("deepskyblue", "brown1", 
+           "brown4", "darkgrey",
+          "darkolivegreen1", "darkseagreen1")
 
+tm_shape(StrateSTSI) + tm_raster(style = "cat",
+                                 palette = pal8) 
+  
 #compute stratum sample sizes for proportional allocation
 Nh <- tapply(maGrille$stratKM2,INDEX=maGrille$stratKM2,FUN=length)
 wh <- Nh/sum(Nh)
@@ -119,16 +176,18 @@ mysampleSTSI <- st_as_sf(mysampleSTSI,
                        agr = "constant")
 
 
-StrateSTSI <- rasterFromXYZ(maGrille[,c("x","y","stratKM2")],
-                            crs = crs(parc))
-
-StrateSTSI <- rasterFromXYZ(maGrille[,c("x","y","stratKM2")],
-                            crs = crs(parc))
 
 
-pal8 <- c("deepskyblue", "brown1", "brown2",
-           "brown3", "brown4", "darkgrey",
-           "darkolivegreen", "darkolivegreen1", "darkseagreen1")
+tm_shape(StrateSTSI) + tm_raster(style = "cat",
+                                 palette = pal8[-6]) +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(mysampleSTSI) + tm_symbols (col = 'stratKM2',
+                                   size=2,
+                                   palette = pal8[-6],
+                                   border.col = "black")
+
+
+
 
 tm_shape(StrateSTSI) + tm_raster(style = "cat",
                                  palette = pal8) +

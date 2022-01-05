@@ -26,7 +26,7 @@ knitr::opts_chunk$set(error = TRUE)
 
 ## Bienvenue
 
-Dans cet exercice, nous allons mettre en oeuvre les techniques de sélection des unités d'échantillonnage dans l'espace afin de produire à la fois une carte des propriétés du sol et une estimation des statistiques globales de la parcelle.
+Dans ce TD, nous allons mettre en oeuvre les techniques de sélection des unités d'échantillonnage dans l'espace afin de produire à la fois une carte des propriétés du sol et une estimation des statistiques globales de la parcelle.
 
 Nous basons ce TD sur les données acquises par l'université de Tours sur une parcelle agricole. L'objectif est de caractériser les propriétés du sol globalement et localement.
 
@@ -41,7 +41,7 @@ Nous allons aborder
 
 Il est en lien avec les cours [_Cours Echantillonnage_](https://nsaby.github.io/cours-echantillonnage/), un libre cookbook.
 
-### Démarrage
+## Démarrage
 
 La définition de protocole d'échantillonnage dans l'espace nécessite d'utiliser les fonctions SIG dans R. 
 
@@ -90,13 +90,14 @@ saveRDS(rcrop, file = 'data/r.RDS')
 ```
 
 
-### Représenter
+### Représenter les données : faire une care
+te
 
 
 On peut ensuite aisément visualiser les données avec le package `tmap`. On ajoute les couches avec les fonctions adaptées au format de données
 
 ```{r}
-tm_shape(r) +  tm_raster() +
+tm_shape(rcrop) +  tm_raster() +
   tm_shape(parc) + tm_polygons(alpha = 0)
 
 ```
@@ -140,13 +141,15 @@ l'objet `parc` contenant les coordonnées et les variables dérivées
 summary(parc)
 ```
 
-## Echantillonnage spatial
+## Echantillonnage purement spatial
 
 ### aléatoire simple
 
 Dans un premier temps, écrire un code pour produire un échantillonnage aléatoire simple appelé SI. Pour cela:
 
  * utiliser la fonction `st_sample`  avec les bonnes options
+ * il faut choisir une zone d'étude, l'objet SIG vecteur `parc`
+ * l'option `random``
  * choisir le bon nombre d'unités d'échantillonnage
  * faire une carte avec `tmap`
 
@@ -190,7 +193,10 @@ tm_shape(parc) + tm_polygons() +
 
 Créer un échantillonnage régulier avec 24 points
 
- * utiliser la fonction `st_sample`  avec la bonne option
+ * utiliser la fonction `st_sample`  avec les bonnes options
+ * il faut choisir une zone d'étude, l'objet SIG vecteur `parc`
+ * chercher l'aide de `st_sample`
+ * l'option `regular`
  * choisir le bon nombre d'unités d'échantillonnage
  * faire une carte avec `tmap`
 
@@ -228,60 +234,90 @@ tm_shape(parc) + tm_polygons() +
 ```
     
 
-### Spatialement optimisé
+### Echanillonnage spatialement optimisé
 
-Créer un échantillonnage par strate compacte
+Créer un échantillonnage en utilisant les strates compactes à l'aide d'un clustering sur les coordonnées de la grille puis en retenant le centroïde de chaque cluster.
 
  * utiliser la fonction `kmeans`  sur les coordonnées avec autant de strates que de sites
+ * utiliser le tableau `maGrille` avec les bonnes colonnes.
  * choisir le bon nombre d'unités d'échantillonnage
+ * créer un raster à partir du résultat du clustering
  * faire une carte avec `tmap`
 
+#### Ex 1: Stratifier selon les coordonnées
 
-```{r spacov, exercise = TRUE}
-k1<- kmeans(x=  ,
-            centers= ,
+```{r spacov1, exercise = TRUE}
+nEchantillons <- 
+
+k1 <- kmeans(x= maGrille[,1:2] ,
+            centers= nEchantillons,
+            nstart=10, 
+            iter.max = 500
+            )
+
+maGrille$stratKM <- factor(k1$cluster)
+
+
+StrateKM <- rasterFromXYZ(maGrille[,c("x","y","stratKM")],
+                            crs = crs(parc))
+
+
+tm_shape(StrateKM) + tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0) 
+```
+
+
+
+```{r spacov1-solution}
+nEchantillons <- 24
+
+k1 <- kmeans(x= maGrille[,1:2] ,
+            centers= nEchantillons,
             nstart=10, iter.max = 500)
 
 maGrille$stratKM <- factor(k1$cluster)
 
-rdist.out <- rdist(x1 = k1$centers,
-                   x2 = maGrille[,1:2]
-                   )
-ids.mindist <- apply(rdist.out,MARGIN=1,which.min)
 
-mySampleKM <- maGrille[ids.mindist,]
-
-rm(k1)
-
-mySampleKM <- st_as_sf(mySampleKM,
-                        coords = c('x','y'),
-                       crs = crs(parc),
-                       agr = "constant")
-
-tm_shape(r) + tm_raster() +
-  tm_shape(parc) + tm_polygons(alpha = 0) +
-  tm_shape(MonSpSY) + tm_dots(size=4) +
-  tm_shape(MonSpSI) + tm_dots(size=2, col="red")+
-   tm_shape(mySampleKM) + tm_dots(size=2, col="green")
+StrateKM <- rasterFromXYZ(maGrille[,c("x","y","stratKM")],
+                            crs = crs(parc))
 
 
-    
+tm_shape(StrateKM) + tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0) 
+
 ```
 
 
+#### Ex 2 : Récupérer les coordonnées des centroïdes
 
-```{r spacov-solution}
-k1<- kmeans(x= maGrille[,1:2] ,
+Ajouter une nouvelle étape qui a pour objectif d'extraire les pixels correspondants aux centroïdes des clusters.
+
+l'objet `k1` contient dans le slot `cluster`
+
+
+```{r spacov2, exercise = TRUE}
+nEchantillons <- 24
+
+k1 <- kmeans(x= maGrille[,1:2] ,
             centers= nEchantillons,
             nstart=10, iter.max = 500)
 
-strat0<- k1$cluster
-maGrille$stratKM <- factor(strat0)
+maGrille$stratKM <- factor(k1$cluster)
+
+
+StrateKM <- rasterFromXYZ(maGrille[,c("x","y","stratKM")],
+                            crs = crs(parc))
+
+# Récupérer le centroïde
 
 rdist.out <- rdist(x1 = k1$centers,
                    x2 = maGrille[,1:2]
                    )
-ids.mindist <- apply(rdist.out,MARGIN=1,which.min)
+
+ids.mindist <- apply(rdist.out,
+                     MARGIN=1,
+                     which.min
+                     )
 
 mySampleKM <- maGrille[ids.mindist,]
 
@@ -292,23 +328,68 @@ mySampleKM <- st_as_sf(mySampleKM,
                        crs = crs(parc),
                        agr = "constant")
 
-tm_shape(r) + tm_raster() +
+tm_shape(StrateKM) + tm_raster() +
   tm_shape(parc) + tm_polygons(alpha = 0) +
-  tm_shape(MonSpSY) + tm_dots(size=4) +
-  tm_shape(MonSpSI) + tm_dots(size=2, col="red")+
-   tm_shape(mySampleKM) + tm_dots(size=2, col="green")
+  tm_shape(mySampleKM) + tm_dots(size=4) 
 
 ```
 
 
+
+```{r spacov2-solution}
+
+nEchantillons <- 24
+
+k1 <- kmeans(x= maGrille[,1:2] ,
+            centers= nEchantillons,
+            nstart=10, iter.max = 500)
+
+maGrille$stratKM <- factor(k1$cluster)
+
+
+StrateKM <- rasterFromXYZ(maGrille[,c("x","y","stratKM")],
+                            crs = crs(parc))
+
+# Récupérer le centroïde
+
+rdist.out <- rdist(x1 = k1$centers,
+                   x2 = maGrille[,1:2]
+                   )
+
+ids.mindist <- apply(rdist.out,
+                     MARGIN=1,
+                     which.min
+                     )
+
+mySampleKM <- maGrille[ids.mindist,]
+
+rm(k1)
+
+mySampleKM <- st_as_sf(mySampleKM,
+                        coords = c('x','y'),
+                       crs = crs(parc),
+                       agr = "constant")
+
+tm_shape(StrateKM) + tm_raster() +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(mySampleKM) + tm_dots(size=4) 
+
+
+```
+
 ## Avec un "k-moyenne" avec les variables dérivées
 
-#### Exercise 1
+Dans cette partie, nous voulons créer un échantillonnage **aléatoire stratifié**. Pour cela, nous allons d'abord créer des strates correspondant à des clusters sur les valeurs des coordonnées et des variables dérivées du mnt.
+
+Il faut donc calculer les variables dérivées et les intégrées dans un tableau.
+
+
+### Exercise 1: préparer les covariables
 
 
 Nous pouvons commencer par calculer la pente à partir du mnt
 
-```{r mesdonnes, exercise = TRUE, exercise.setup = "preparer-data"}
+```{r terrain, exercise = TRUE, exercise.setup = "preparer-data"}
 s <- terrain( rcrop ,
               opt = c("slope") 
               )
@@ -317,7 +398,7 @@ plot(s)
 
 
 
-#### Exercise 2
+### Exercise 2 : préparer les covariables
 
 Allonger la liste des variables dérivées calculées dans l'objet s afin de rajouter l'aspect, le TPI et le TRI:  `c( "slope","aspect", "TPI", "TRI")`
 
@@ -325,7 +406,10 @@ Allonger la liste des variables dérivées calculées dans l'objet s afin de raj
 
     
 ```{r summariseex4, exercise = TRUE, exercise.setup = "preparer-data"}
-    
+ s <- terrain( r,
+              opt = c("slope", "aspect", "TPI", "TRI") 
+              )
+plot(s)   
 ```
 
 ```{r summariseex4-solution}
@@ -336,29 +420,44 @@ s <- terrain( r,
 ```
     
 
-### Exercice 1: calculer les strates
+### Exercice 3: calculer les strates
 
-```{r spacov3, exercise = TRUE}
-nStrates <- 8
+Utiliser la fonction kmeans pour calculer les strates sur les covariables suivantes:
 
-k1<- kmeans(x=  ,
-            centers= ,
-            nstart=10,
-            iter.max = 500)
+* les coordonnées
+* l'altitude
+* les variables dérivées
 
-strat0<- k1$cluster
-maGrille$stratKM <- factor(strat0)
+Utiliser la fonction `rasterFromXYZ`  pour créer un raster et faire un carte avec `tmap`
+
+```{r spacov3, exercise = TRUE, exercise.setup = "preparer-data"}
+k1<- kmeans(x= scale(maGrille[,1:7]) ,
+            centers= nStrates,
+            nstart=10, 
+            iter.max = 500000)
+
+
+maGrille$stratKM2 <- factor(k1$cluster)
+
+
 
 
 StrateSTSI <- rasterFromXYZ(maGrille[,c("x","y","stratKM2")],
                             crs = crs(parc))
 
-tm_shape(StrateSTSI) + tm_raster() 
 
+
+pal8 <- c("deepskyblue", "brown1", "brown2",
+           "brown3", "brown4", "darkgrey",
+           "darkolivegreen", "darkolivegreen1", "darkseagreen1")
+
+tm_shape(StrateSTSI) + tm_raster(style = "cat",
+                                 palette = pal8) +
+  tm_shape(parc) + tm_polygons(alpha = 0) 
 
 ```
 
-```{r spacov3-solution}
+```{r spacov3-solution, exercise.setup = "preparer-data"}
 nStrates <- 8
 
 k1<- kmeans(x= maGrille[,1:2] ,
@@ -377,65 +476,72 @@ tm_shape(StrateSTSI) + tm_raster()
 ```
     
 
-```{r spacov2, exercise = TRUE}
-  k1<- kmeans(
-    
-  )
+### Exercice 4 : calculer le nombre de points par states
 
-maGrille$stratKM <- factor(k1$cluster)
+Une fois la carte des strates produites, utiliser la fonction 
 
-rdist.out <- rdist(x1 = k1$centers,
-                   x2 = maGrille[,1:2]
-                   )
-
-ids.mindist <- apply(rdist.out,MARGIN=1,which.min)
-
-mySampleKM <- maGrille[ids.mindist,]
-
-mySampleKM <- st_as_sf(mySampleKM,
-                        coords = c('x','y'),
-                       crs = crs(parc),
-                       agr = "constant")
-
-tm_shape(r) + tm_raster() +
-  tm_shape(parc) + tm_polygons(alpha = 0) +
-  tm_shape(MonSpSY) + tm_dots(size=4) +
-  tm_shape(MonSpSI) + tm_dots(size=2, col="red")+
-   tm_shape(mySampleKM) + tm_dots(size=2, col="green")
-  
-```
-
-```{r spacov2-solution}
-
-k1<- kmeans(x= maGrille[,1:2] ,
-            centers= nEchantillons,
-            nstart=10, iter.max = 500)
-
-strat0<- k1$cluster
-maGrille$stratKM <- factor(strat0)
-
-rdist.out <- rdist(x1 = k1$centers,
-                   x2 = maGrille[,1:2]
-                   )
-
-ids.mindist <- apply(rdist.out,MARGIN=1,which.min)
-
-mySampleKM <- maGrille[ids.mindist,]
-
-mySampleKM <- st_as_sf(mySampleKM,
-                        coords = c('x','y'),
-                       crs = crs(parc),
-                       agr = "constant")
-
-tm_shape(r) + tm_raster() +
-  tm_shape(parc) + tm_polygons(alpha = 0) +
-  tm_shape(MonSpSY) + tm_dots(size=4) +
-  tm_shape(MonSpSI) + tm_dots(size=2, col="red")+
-   tm_shape(mySampleKM) + tm_dots(size=2, col="green")
+```{r spacov4, exercise = TRUE, exercise.setup = "preparer-data"}
 
 ```
 
+```{r spacov4-solution, exercise.setup = "preparer-data"}
 
+k1<- kmeans(x= scale(maGrille[,1:7]) ,
+            centers= nStrates,
+            nstart=10, 
+            iter.max = 500000)
+
+
+maGrille$stratKM2 <- factor(k1$cluster)
+
+
+#compute stratum sample sizes for proportional allocation
+Nh <- tapply(maGrille$stratKM2,INDEX=maGrille$stratKM2,FUN=length)
+wh <- Nh/sum(Nh)
+
+
+nh <- round(wh*nEchantillons)
+sum(nh)
+
+#minimum stratum sample size is 2, so increase nh for stratum 2 by 1, and reduce sample szie of stratum 6 by 1
+nh[nh<2] <- 2
+nh
+sum(nh)
+
+units<-strata(maGrille,
+              stratanames="stratKM2",
+              size=nh,
+              method="srswr")
+
+mysampleSTSI <-getdata(maGrille,units)
+
+# select random location within selected pixel
+resolution <-res(r)
+mysampleSTSI$x <- jitter(mysampleSTSI$x,resolution[1]/2)
+mysampleSTSI$y <- jitter(mysampleSTSI$y,resolution[1]/2)
+
+mysampleSTSI <- st_as_sf(mysampleSTSI,
+                       coords = c('x','y'),
+                       crs = crs(parc),
+                       agr = "constant")
+
+
+StrateSTSI <- rasterFromXYZ(maGrille[,c("x","y","stratKM2")],
+                            crs = crs(parc))
+
+
+pal8 <- c("deepskyblue", "brown1", "brown2",
+           "brown3", "brown4", "darkgrey",
+           "darkolivegreen", "darkolivegreen1", "darkseagreen1")
+
+tm_shape(StrateSTSI) + tm_raster(style = "cat",
+                                 palette = pal8) +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+   tm_shape(mysampleSTSI) + tm_dots(size=2, col="grey")
+
+```
+
+## Question générale
 
 ```{r letter-a, echo=FALSE}
 question("Quelle est l'utilité de l'échantillonnage aléatoire",
@@ -446,35 +552,4 @@ question("Quelle est l'utilité de l'échantillonnage aléatoire",
 )
 ```
 
-
-## Echantillonnage avec covariables
-
-
-Créer un échantillonnage régulier avec 24 points
-
-```{r kmean, exercise = TRUE}
-    
-```
-
-```{r kmean-solution}
-nEchantillons <- 24
-  
-# échantillonnage grille
-MonSpSY  <- st_sample(parc , 
-                      size= nEchantillons, 
-                      type =  'regular')
-
-
-tm_shape(parc) + tm_polygons() +
-  tm_shape(MonSpSY) + tm_dots(size=2)
-
-```
-    
-<div id="kmean-hint">
-**Hint:** La stratégie consiste à:
-
- * utiliser la fonction `st_sample`  avec la bonne option
- * choisir le bon nombre d'unités d'échantillonnage
- * faire une carte avec `tmap`
-</div>
 
