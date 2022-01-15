@@ -1,0 +1,305 @@
+---
+title: "monTDEchant2022"
+author: "moi"
+date: "13/01/2022"
+output:
+  html_document:
+    df_print: paged
+---
+
+Je charge ici les librairies nécessaires
+
+```{r initialisation}
+library(rgdal)
+library(sf)
+library(raster)
+library(tmap)
+library(fields)
+library(sampling)
+library(spatialEco)
+
+sessionInfo()
+
+getwd()
+
+set.seed(1455) # remplacer ici par le chiffre
+
+```
+# Préparation des données
+
+Importer les données dans R et les préparer pour la construction du plan d'échantillonnage
+
+```{r}
+parc <- read_sf("D:/projets/gsm.dsm/Tours/ecole_terrain/SamplingCourseTours/data/parcelle_adj.shp")
+
+parc <- read_sf("D:/projets/gsm.dsm/Tours/ecole_terrain/SamplingCourseTours/data/parcelle_adj.shp")
+
+
+r <- raster("data/mnt_par_adj/" , values = TRUE)
+
+tm_shape(r) + tm_raster()+
+  tm_shape(parc) + tm_polygons(alpha = 0)
+
+```
+
+Diminuer la résolution divisée par 8
+
+```{r}
+ragg <- aggregate(r, fact = 8)
+plot(ragg)
+
+```
+
+Calcul de la courbure planiforme
+
+```{r}
+curv <-curvature(ragg,"planform")
+plot(curv)
+contour(ragg,add=TRUE)
+
+```
+```{r}
+tm_shape(curv) + tm_raster()+tm_shape(parc)+tm_polygons(alpha = 0)
+```
+
+Calcul de la variable dérivée pente :
+```{r}
+s <- terrain(ragg,
+             opt = c("slope") 
+             )
+plot(s)
+
+```
+
+
+
+Découper les rasters selon le contour de la parcelle
+
+```{r}
+scrop <- crop(s,parc)
+scrop <- mask(scrop,parc)
+
+rcrop <- crop(ragg,parc)
+rcrop <- mask(rcrop,parc)
+
+curvcrop <- crop(curv,parc)
+curvcrop <- mask(curvcrop,parc)
+
+```
+
+
+Empiler les rasters dans un objet
+
+```{r}
+final <- stack(scrop, curvcrop,rcrop)
+names(final)[2] <- "courbure"
+names(final)[3] <- "alt"
+plot(final)
+
+
+
+
+```
+
+```{r}
+tm_shape(final)+ tm_raster()
+```
+
+Etape finale : on transforme la pile de rasters dans un tableau de données
+
+```{r}
+# transforme la pile de raster en tableau
+magrille <- getValues(final)
+magrille <- na.omit(magrille)
+
+```
+
+# Création des groupes de pixels
+## Exercice sur les kmeans
+
+
+```{r}
+# choix du nombres de strates et donc de clusters
+nStrates <- 20
+
+
+k1 <- kmeans(x= scale(magrille) ,
+            centers = nStrates,
+            nstart = 10000, 
+            iter.max = 500000)
+
+100 * k1$betweenss / k1$totss
+
+```
+
+Faire une carte de la stratification de la zone
+
+```{r}
+# rassembler dans un tableau le X, y et le cluster
+magrille <- cbind.data.frame(coordinates(final) , getValues(final))
+magrille <- na.omit(magrille)
+magrille$clust <-  k1$cluster
+
+
+StrateKM <- rasterFromXYZ(magrille[,c("x","y","clust")],
+                            crs = crs(parc))
+
+tm_shape(StrateKM) + tm_raster(style="cat")
+```
+
+
+## Création de 4 strates
+
+il faut choisir a priori le nombre groupes ou "clusters"
+
+```{r}
+# choix du nombres de strates et donc de clusters
+nStrates <- 4
+
+set.seed(14012022)
+
+k1 <- kmeans(x= scale(magrille[,c("slope","courbure","alt")]) ,
+            centers = nStrates,
+            nstart = 10000, 
+            iter.max = 500000)
+
+100 * k1$betweenss / k1$totss
+
+```
+
+Faire une carte de la stratification de la zone
+
+```{r}
+# rassembler dans un tableau le X, y et le cluster
+magrille <- cbind.data.frame(coordinates(final) , getValues(final))
+magrille <- na.omit(magrille)
+magrille$clust <-  k1$cluster
+
+
+StrateKM <- rasterFromXYZ(magrille[,c("x","y","clust")],
+                            crs = crs(parc))
+
+tm_shape(StrateKM) + tm_raster(style="cat")
+```
+
+
+# Selection des sondages et des échantillons de surface
+
+On définit le nombre de sondages
+
+```{r}
+nEchantillons <- 48
+```
+
+
+on veut au moins 2 sondages par strates et le reste en prélèvement de surface. on répartie ici les sondages par strate au prorata des surfaces.
+
+```{r}
+#calculer la taille des strates
+TailledesStrates <- k1$size
+# ou
+TailledesStrates <- tapply(X = magrille$clust,
+             INDEX = magrille$clust,
+             FUN = length)
+
+# on en déduit le poids des strates
+PoidsStrates <- TailledesStrates/sum(TailledesStrates)
+
+
+NbSondagesStrates <- round(PoidsStrates*nEchantillons)
+
+sum(NbSondagesStrates)
+
+# minimum de sondages à 2 par strates, on corrige la répartition
+NbSondagesStrates[NbSondagesStrates<2] <- 2
+NbSondagesStrates
+
+# on vérifie la somme de la ventilation
+sum(NbSondagesStrates)
+
+```
+
+
+Tirer au hasard les ensembles de points par strates 
+
+
+```{r}
+#on tire au sort les pixels par strate
+# pour faire tourner la fonction, il faut classer le tableau par ordre
+# croissant des numéros des strates
+magrille <- magrille[order(magrille$clust),]
+
+
+units<-strata(magrille,
+              stratanames="clust",
+              size=NbSondagesStrates,
+              method="srswr"
+              )
+
+# on récupère la ligne du tableau pour obtenir les coordonnées x et y
+mysampleSTSI <-getdata(magrille,units)
+
+NbSondagesStrates
+table(mysampleSTSI$clust)
+
+# Tirer au hasard une coordonnées dans un cercle de rayon
+# égale à la résolution de la grille
+resolution <-res(ragg) # on extrait la résolution de la grille (4m)
+mysampleSTSI$xAlea <- jitter(mysampleSTSI$x,resolution[1]/2)
+mysampleSTSI$yAlea <- jitter(mysampleSTSI$y,resolution[1]/2)
+
+```
+
+Pour faire une carte, il faut transformer le tableau à plat en shapefile
+
+
+```{r}
+mysampleSTSIAlea <- st_as_sf(mysampleSTSI,
+                       coords = c('xAlea','yAlea'),
+                       crs = crs(parc),
+                       agr = "constant")
+
+mysampleSTSITheo <- st_as_sf(mysampleSTSI,
+                       coords = c('x','y'),
+                       crs = crs(parc),
+                       agr = "constant")
+
+
+```
+
+Avec les coordonnées des centres des pixels
+
+```{r}
+tm_shape(StrateKM) + tm_raster(style = "cat") +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(mysampleSTSITheo) + tm_symbols (col = 'clust',
+                                   size=2,
+                                   border.col = "black")
+
+```
+
+AVec les coordonnées finales
+mysampleSTSIAlea
+
+ # choisir les sites pour les sondages
+ 
+```{r}
+mafonction <- function(i){
+  c(1,1,rep(0,length(i)-2) )
+}
+
+mysampleSTSIAlea$Sondage<- factor(
+  unlist(tapply(X = mysampleSTSIAlea$clust,
+             INDEX = mysampleSTSIAlea$clust,
+             FUN = mafonction ) )
+)
+
+
+tm_shape(StrateKM) + tm_raster(style = "cat") +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(mysampleSTSIAlea) + tm_symbols (col = 'Sondage',
+                                   size=2,
+                                   border.col = "black")
+
+```
+ 

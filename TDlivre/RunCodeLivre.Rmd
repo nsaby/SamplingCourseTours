@@ -1,0 +1,175 @@
+---
+title: "Echantillonnage parcelle 2020"
+output: 
+  learnr::tutorial:
+    progressive: true
+    allow_skip: true
+runtime: shiny_prerendered
+description: >
+ Tester plusieurs configuration d'échantillonnage.
+---
+
+```{r , include=FALSE}
+library(rmarkdown)
+library(learnr)
+library(sf)
+library(raster)
+library(tmap)
+library(dplyr)
+library(fields)
+library(sampling)
+
+tutorial_options(exercise.timelimit = 60)
+knitr::opts_chunk$set(error = TRUE)
+```
+
+
+## Bienvenue
+
+Dans ce TD, nous allons mettre en oeuvre les techniques de sélection des unités d'échantillonnage dans l'espace afin de produire à la fois une carte des propriétés du sol et une estimation des statistiques globales de la parcelle.
+
+Nous basons ce TD sur des données disponibles dans les librairies R.
+
+Il est en lien avec les cours [_Cours Echantillonnage_](https://nsaby.github.io/cours-echantillonnage/), un libre cookbook.
+
+
+```{r eval = TRUE}
+library(learnr)
+library(rgdal)
+library(sf)
+library(raster)
+library(tmap)
+library(dplyr)
+library(fields)
+library(sampling)
+```
+
+```{r setup, include=TRUE}
+
+load("www/DonneeCoursTours.RData")
+
+```
+
+
+## Aléatoire simple
+### Cas 1
+```{r si, exercise = TRUE}
+n = 
+
+#fixer la graine pour les tirages aléatoires
+set.seed()
+
+# Creation des identifiants des lignes
+id = 1:10000
+# ou
+id = seq( from = 1, to = 10000, by = 1)
+# tire au hasard n valeurs parmi 10000
+MesIds <- sample( x = id  , size = n)
+
+MesIds <- sort(MesIds)
+# Les coordonn?es
+champ[ MesIds , 1:2 ]
+```
+
+
+```{r si-solution}
+n = 20
+
+#fixer la graine pour les tirages aléatoires
+set.seed(5602)
+
+# Creation des identifiants des lignes
+id = 1:10000
+# ou
+id = seq( from = 1, to = 10000, by = 1)
+# tire au hasard n valeurs parmi 10000
+MesIds <- sample( x = id  , size = n)
+
+MesIds <- sort(MesIds)
+# Les coordonn?es
+champ[ MesIds , 1:2 ]
+```
+
+### cas 2
+```{r si2, exercise = TRUE}
+MonEch <- spsample( x =  ,
+                    n  =  ,
+                    type = "")
+
+
+SI <- tm_shape(champSP) +
+  tm_raster()+
+  tm_shape(MonEch)+
+  tm_symbols()+
+tm_layout(legend.outside = TRUE)
+
+SI
+```
+
+
+```{r si2-solution}
+MonEch <- spsample( x = champSP ,
+                    n  = n ,
+                    type = "random")
+
+
+SI <- tm_shape(champSP) +
+  tm_raster()+
+  tm_shape(MonEch)+
+  tm_symbols()+
+tm_layout(legend.outside = TRUE)
+
+SI
+```
+
+
+
+
+### cas 3
+```{r si3, exercise = TRUE}
+MonEchSF <- st_sample( x = as(champSP,'sf') ,
+                    size  = n ,
+                    type = "random")
+
+
+SI <- tm_shape(champSP) +
+  tm_raster()+
+  tm_shape(MonEchSF)+
+  tm_symbols()+
+tm_layout(legend.outside = TRUE)
+
+SI
+```
+
+
+```{r si3-solution}
+MonEchSF <- st_sample( x = as(champSP,'sf') ,
+                    size  = n ,
+                    type = "random")
+
+
+SI <- tm_shape(champSP) +
+  tm_raster()+
+  tm_shape(MonEchSF)+
+  tm_symbols()+
+tm_layout(legend.outside = TRUE)
+
+SI
+```
+
+
+## Estimation
+
+### Calcul de la moyenne
+```{r moy, exercise = TRUE}
+```
+
+
+```{r moy-solution}
+# simulation du terrain
+terrain2 <- over(MonEch,champSP)
+
+MoyEst <- mean(terrain2$sim1)
+
+MoyEst
+```

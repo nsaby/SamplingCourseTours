@@ -10,6 +10,9 @@ library(sampling)
 parc <- read_sf("../data/parcelle_adj.shp")
 
 r <- raster("../data/mnt_par_adj/")
+
+save.image(file = "../data/CoursTDParc2022.RData" , version = 2)
+
 plot(r)
 
 
