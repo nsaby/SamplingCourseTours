@@ -1,0 +1,86 @@
+---
+title: "MonTDMonNom"
+output: word_document
+---
+
+```{r}
+sessionInfo()
+
+getwd()
+
+set.seed(1455) # remplacer ici par le chiffre
+
+library(knitr)
+library(sp) # pour gérer les données SIG raster et vecteurs
+library(sf) # pour gérer les données SIG vecteurs
+library(tmap) # faire les carte
+library(ggplot2)
+library(fields)
+
+```
+
+# données
+
+Je charge les données pour le TD
+
+```{r}
+load("C:/Users/nsaby/Dropbox/fac/tp/sampling/data/DonneeCoursTours.RData")
+
+tm_shape(champSP) +
+  tm_raster(style="fisher")+
+  tm_layout(legend.outside = TRUE)
+
+library(sp)
+plot(champSP)
+
+
+```
+
+# Aléatoire simple
+
+```{r}
+n = 10
+
+MonEch <- spsample( x = champSP ,
+                    n  = n ,
+                    type = "random")
+
+
+SI <- tm_shape(champSP) +
+  tm_raster()+
+  tm_shape(MonEch)+
+  tm_symbols()+
+  tm_layout(legend.outside = TRUE)
+
+SI
+
+```
+
+
+```{r}
+terrain2 <- over(MonEch,champSP)
+
+MoyEst <- mean(terrain2$sim1)
+
+MoyEst
+
+# Variance d'échantillonnage de MoyEst
+V <- var(terrain2$sim1) / n
+
+# calcul du quantile
+zalpha <- qnorm(p = 1- (0.05/2), mean = 0, sd = 1)
+# si n est petit < 30
+talpha <- qt(p = 1- (0.05/2) , df = n-1)
+
+# calcul de l'interval de confiance selon les deux lois
+IC <- zalpha * sqrt(V)
+ICT <- talpha * sqrt(V)
+
+c(IC,ICT)
+
+```
+
+
+```{r}
+c(n,2 *ICT)
+```

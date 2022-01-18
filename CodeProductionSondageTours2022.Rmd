@@ -1,0 +1,319 @@
+---
+title: "Plan Echantillonnage TOURS 2022"
+author: "Nicolas Saby, Infosol, INRAE"
+date: "13/01/2022"
+output:
+  html_document: 
+    number_sections: yes
+---
+
+Je charge ici les librairies nécessaires
+
+```{r initialisation}
+library(rgdal)
+library(sf)
+library(raster)
+library(tmap)
+library(fields)
+library(sampling)
+library(spatialEco)
+library(MetBrewer)
+```
+# Préparation des données
+
+Importer les données dans R et les préparer pour la construction du plan d'échantillonnage
+
+```{r}
+parc <- read_sf("D:/projets/gsm.dsm/Tours/ecole_terrain/SamplingCourseTours/data/parcelle_adj.shp")
+
+parc <- read_sf("D:/projets/gsm.dsm/Tours/ecole_terrain/SamplingCourseTours/data/parcelle_adj.shp")
+
+
+r <- raster("data/mnt_par_adj/" , values = TRUE)
+
+tm_shape(r) + tm_raster()+
+  tm_shape(parc) + tm_polygons(alpha = 0)
+
+```
+
+ la résolution divisée par 8 pour éliminer les effets à très petites distances
+
+```{r}
+ragg <- aggregate(r, fact = 8)
+plot(ragg)
+
+```
+
+Calcul de la courbure planiforme
+
+```{r}
+curv <-curvature(ragg,"planform")
+plot(curv)
+contour(ragg,add=TRUE)
+
+```
+
+
+Calcul de la variable dérivée pente :
+
+```{r}
+s <- terrain(ragg,
+             opt = c("slope") 
+             )
+plot(s)
+
+```
+
+
+
+Découper les rasters selon le contour de la parcelle
+
+```{r}
+scrop <- crop(s,parc)
+scrop <- mask(scrop,parc)
+
+rcrop <- crop(ragg,parc)
+rcrop <- mask(rcrop,parc)
+
+curvcrop <- crop(curv,parc)
+curvcrop <- mask(curvcrop,parc)
+
+```
+
+
+Empiler les rasters dans un objet stack
+
+```{r}
+final <- stack(scrop, curvcrop,rcrop)
+names(final)[2] <- "courbure"
+names(final)[3] <- "alt"
+plot(final)
+
+
+
+
+```
+
+
+
+
+Etape finale : on transforme la pile de rasters dans un tableau de données
+
+```{r}
+# transforme la pile de raster en tableau
+magrille <- getValues(final)
+magrille <- na.omit(magrille)
+
+```
+
+# Création de la stratification
+
+## Création de 4 strates
+
+il faut choisir a priori le nombre groupes ou "clusters"
+
+```{r}
+# choix du nombres de strates et donc de clusters
+nStrates <- 4
+
+set.seed(140124)
+
+k1 <- kmeans(x= scale(magrille[,c("slope","courbure","alt")]) ,
+            centers = nStrates,
+            nstart = 50000, 
+            iter.max = 500000)
+
+100 * k1$betweenss / k1$totss
+
+```
+
+Faire une carte de la stratification de la zone
+
+```{r}
+# rassembler dans un tableau le X, y et le cluster
+magrille <- cbind.data.frame(coordinates(final) , getValues(final))
+
+magrille <- na.omit(magrille)
+magrille$clust <-  k1$cluster
+
+
+StrateKM <- rasterFromXYZ(magrille[,c("x","y","clust")],
+                            crs = crs(parc))
+
+pal  <- MetBrewer::met.brewer("Homer1",4, type='discrete')
+
+tm_shape(StrateKM) + tm_raster(style="cat",palette = pal
+                               )
+```
+
+
+# Selection des sondages et des échantillons de surface
+
+On définit le nombre de sondages
+
+```{r}
+nEchantillons <- 48
+```
+
+
+on veut au moins 2 sondages par strates et le reste pour les prélèvements de surface. on répartie ici les sondages par strate au prorata des surfaces.
+
+```{r}
+#calculer la taille des strates
+TailledesStrates <- k1$size
+# ou
+TailledesStrates <- tapply(X = magrille$clust,
+             INDEX = magrille$clust,
+             FUN = length)
+
+# on en déduit le poids des strates
+PoidsStrates <- TailledesStrates/sum(TailledesStrates)
+
+
+NbSondagesStrates <- round(PoidsStrates*nEchantillons)
+
+sum(NbSondagesStrates)
+
+# minimum de sondages à 2 par strates, on corrige la répartition
+NbSondagesStrates[NbSondagesStrates<2] <- 2
+NbSondagesStrates
+
+
+
+```
+On vérifie également la taille de l'échantillon. 
+
+```{r}
+sum(NbSondagesStrates)
+```
+
+Pour s'assurer de ne pas tomber sur un site où le prélèvement n'est pas réalisable sur le terrain, nous allons tirer des points supplémentaires par strates. Pour cela, il suffit de rajouter 10 points à chaque strate/
+
+```{r}
+NbSondagesStrates <- NbSondagesStrates + 10
+NbSondagesStrates
+```
+
+
+Tirer au hasard les ensembles de points par strates 
+
+
+```{r}
+#on tire au sort les pixels par strate
+# pour faire tourner la fonction, il faut classer le tableau par ordre
+# croissant des numéros des strates
+magrille <- magrille[order(magrille$clust),]
+
+set.seed(140126)
+
+units<-strata(magrille,
+              stratanames="clust",
+              size=NbSondagesStrates,
+              method="srswr"
+              )
+
+# on récupère la ligne du tableau pour obtenir les coordonnées x et y
+mysampleSTSI <-getdata(magrille,units)
+
+
+# Tirer au hasard une coordonnées dans un cercle de rayon
+# égale à la résolution de la grille
+resolution <-res(ragg) # on extrait la résolution de la grille (4m)
+mysampleSTSI$xAlea <- jitter(mysampleSTSI$x,resolution[1]/2)
+mysampleSTSI$yAlea <- jitter(mysampleSTSI$y,resolution[1]/2)
+
+```
+On vérifie la bonne répartition des sites dans les strates
+
+```{r}
+NbSondagesStrates
+table(mysampleSTSI$clust)
+
+```
+
+
+Pour faire une carte, il faut transformer le tableau à plat en shapefile
+
+
+```{r}
+mysampleSTSIAlea <- st_as_sf(mysampleSTSI,
+                       coords = c('xAlea','yAlea'),
+                       crs = crs(parc),
+                       agr = "constant")
+
+```
+
+Avec les coordonnées finales et la couleur correspond au numéro de la strate.
+
+```{r}
+tm_shape(StrateKM) + tm_raster(style = "cat",palette = pal) +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(mysampleSTSIAlea) + 
+  tm_symbols (col = 'clust',palette = pal,
+              size=1,
+              border.col = "black")
+
+```
+
+
+# choisir les sites pour les sondages
+ 
+On retient les deux premiers sites par strates pour établir les sondages. Les points jaunes représentent les sites où les sondages doivent être réalisés.
+
+```{r}
+mafonction <- function(i){
+  c(1,1,rep(0,length(i)-2) )
+}
+
+mysampleSTSIAlea$Sondage<- factor(
+  unlist(tapply(X = mysampleSTSIAlea$clust,
+             INDEX = mysampleSTSIAlea$clust,
+             FUN = mafonction ) )
+)
+
+
+tm_shape(StrateKM) + tm_raster(style = "cat",palette = pal) +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(mysampleSTSIAlea) + tm_symbols (col = 'Sondage',
+                                   size=2,
+                                   border.col = "black")
+
+```
+ 
+# Sélection des centres des zones
+
+Pour information, nous allons représenter sur une carte le pixel dont les valeurs des 3 covariables est le plus proche des centres des strates (moyennes)
+
+
+```{r}
+rdist.out <- rdist(x1 = k1$centers,
+                   x2 = scale(magrille[,c("slope","courbure","alt")])
+                   )
+ids.mindist <- apply(rdist.out,MARGIN=1,which.min)
+
+mySampleKM <- magrille[ids.mindist,]
+
+```
+
+On peut faire la carte ensuite
+
+```{r}
+CentreStrates <- st_as_sf(mySampleKM,
+                       coords = c('x','y'),
+                       crs = crs(parc),
+                       agr = "constant")
+
+tm_shape(StrateKM) + tm_raster(style = "cat",palette = pal) +
+  tm_shape(parc) + tm_polygons(alpha = 0) +
+  tm_shape(CentreStrates) + tm_symbols (
+                                   size=2,
+                                   border.col = "black")
+
+```
+
+Enfin, on exporte les sondages au format shapefile pour Seb !
+
+```{r}
+st_write(mysampleSTSIAlea,"data/sondages2022.shp" ,delete_layer = TRUE)
+```
+
